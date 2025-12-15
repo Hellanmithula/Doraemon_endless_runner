@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doraemon Runner - Spaced Obstacles</title>
+    <style>
+        body { margin: 0; background: linear-gradient(180deg, #87CEEB 0%, #98D8E8 100%); font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        canvas { border: 4px solid #FF6B6B; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); background: linear-gradient(180deg, #87CEEB 70%, #90EE90 100%); }
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #FF1493; font-size: 24px; display: none; background: rgba(255,255,255,0.95); padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        #instructions { position: absolute; top: 10px; left: 10px; color: #4169E1; font-size: 14px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 10px; }
+        .high-score { color: #FFD700; font-weight: bold; font-size: 28px; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div id="instructions">
+        🐱 SPACE/Tap to Jump | 🥮 Collect Dorayaki | 🐭 Dodge Mouse & Rocks | SAFE LANDING ZONES!
+    </div>
+    <div id="gameOver">
+        <h2>🐱 Game Over! 😿</h2>
+        <p class="high-score">Distance: <span id="finalDistance">0</span>m</p>
+        <p>Dorayaki: <span id="finalCakes">0</span></p>
+        <p>Press SPACEBAR to Run Again!</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverDiv = document.getElementById('gameOver');
+        const finalDistanceSpan = document.getElementById('finalDistance');
+        const finalCakesSpan = document.getElementById('finalCakes');
+
+        // Game state
+        let gameRunning = true;
+        let distance = 0;
+        let cakesCollected = 0;
+        let speed = 4;
+        let gravity = 0.6;
+        let jumpPower = -15;
+        let collisionFlash = 0;
+        let nextObstacleDistance = 300; // **SPACING CONTROL**
+
+        // Player
+        const doraemon = {
+            x: 120, y: 250, width: 60, height: 60,
+            vy: 0, grounded: false,
+            color: '#00BFFF'
+        };
+
+        // Mouse
+        const mouse = {
+            x: 800, y: 270, width: 40, height: 40,
+            baseSpeed: 3.5
+        };
+
+        // Game objects
+        let dorayaki = [];
+        let clouds = [];
+        let obstacles = [];
+
+        // Input
+        let keys = {};
+        document.addEventListener('keydown', (e) => { keys[e.code] = true; });
+        document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+        canvas.addEventListener('touchstart', jump);
+
+        function jump() {
+            if (doraemon.grounded && gameRunning) {
+                doraemon.vy = jumpPower;
+                doraemon.grounded = false;
+            }
+        }
+
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        function init() {
+            clouds = [];
+            obstacles = [];
+            dorayaki = [];
+            nextObstacleDistance = 300 + Math.random() * 200; // Initial spacing
+            for (let i = 0; i < 15; i++) {
+                clouds.push({
+                    x: Math.random() * canvas.width * 2,
+                    y: 40 + Math.random() * 80,
+                    size: 25 + Math.random() * 35,
+                    speed: 0.3 + Math.random() * 0.4
+                });
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // Player physics
+            doraemon.vy += gravity;
+            doraemon.y += doraemon.vy;
+            if (doraemon.y >= 250) {
+                doraemon.y = 250;
+                doraemon.vy = 0;
+                doraemon.grounded = true;
+            }
+
+            if (keys['Space']) {
+                jump();
+                keys['Space'] = false;
+            }
+
+            // Progression
+            distance += speed * 0.016;
+            speed = Math.min(18, 4 + distance / 2000 + cakesCollected * 0.2);
+
+            // **SPACED OBSTACLE SPAWNING**
+            nextObstacleDistance -= speed;
+            if (nextObstacleDistance <= 0) {
+                obstacles.push({
+                    x: canvas.width + 50,
+                    y: 265, // Slightly higher for safer landing
+                    width: 50 + Math.random() * 40,
+                    height: 65,
+                    type: Math.random() > 0.5 ? 'rock' : 'bush'
+                });
+                // **GENEROUS SPACING** - 300-500px between obstacles
+                nextObstacleDistance = 300 + Math.random() * 200;
+            }
+
+            // Mouse
+            mouse.speed = mouse.baseSpeed + (speed - 4) * 0.6;
+            mouse.x -= mouse.speed;
+            if (mouse.x < -mouse.width) {
+                mouse.x = canvas.width + Math.random() * 200;
+            }
+
+            // Mouse collision
+            if (checkCollision(doraemon, mouse)) {
+                collisionFlash = 15;
+                gameOver();
+                return;
+            }
+
+            // **OBSTACLE COLLISION** (with safe spacing)
+            obstacles = obstacles.filter(obs => {
+                obs.x -= speed;
+                if (obs.x < -obs.width) return false;
+
+                if (checkCollision(doraemon, obs)) {
+                    collisionFlash = 15;
+                    gameOver();
+                    return false;
+                }
+                return true;
+            });
+
+            // Dorayaki (more frequent)
+            if (Math.random() < 0.03) {
+                dorayaki.push({
+                    x: canvas.width + 50,
+                    y: 170 + Math.random() * 110,
+                    width: 35, height: 35,
+                    bob: 0
+                });
+            }
+
+            dorayaki = dorayaki.filter(cake => {
+                cake.x -= speed;
+                cake.bob += 0.15;
+                if (cake.x < -cake.width) return false;
+
+                if (checkCollision(doraemon, cake)) {
+                    cakesCollected++;
+                    distance += 50;
+                    return false;
+                }
+                return true;
+            });
+
+            // Clouds
+            clouds.forEach(cloud => {
+                cloud.x -= cloud.speed;
+                if (cloud.x < -cloud.size * 2) cloud.x = canvas.width + Math.random() * 300;
+            });
+
+            if (collisionFlash > 0) collisionFlash--;
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Sky
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(0.7, '#98D8C6');
+            gradient.addColorStop(1, '#90EE90');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Ground with safe zones
+            ctx.fillStyle = '#228B22';
+            ctx.fillRect(0, 320, canvas.width, 80);
+            ctx.fillStyle = '#90EE90';
+            ctx.fillRect(0, 330, canvas.width, 10); // Safe landing line
+
+            // Obstacles (well-spaced)
+            obstacles.forEach(obs => {
+                ctx.shadowColor = '#FF4444';
+                ctx.shadowBlur = 15;
+                if (obs.type === 'rock') {
+                    ctx.fillStyle = '#8B4513';
+                    ctx.beginPath();
+                    ctx.ellipse(obs.x + obs.width/2, obs.y + obs.height/2, obs.width/2, obs.height/2, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.fillStyle = '#228B22';
+                    ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                    ctx.fillStyle = '#32CD32';
+                    ctx.beginPath();
+                    ctx.moveTo(obs.x, obs.y);
+                    ctx.lineTo(obs.x + 15, obs.y - 15);
+                    ctx.lineTo(obs.x + 30, obs.y);
+                    ctx.fill();
+                }
+                ctx.shadowBlur = 0;
+            });
+
+            // Clouds
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            clouds.forEach(cloud => {
+                ctx.beginPath();
+                ctx.arc(cloud.x, cloud.y, cloud.size, 0, Math.PI * 2);
+                ctx.arc(cloud.x + cloud.size * 0.6, cloud.y, cloud.size * 0.8, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Doraemon
+            if (collisionFlash > 0) {
+                ctx.shadowColor = '#FF4444';
+                ctx.shadowBlur = 30;
+            }
+            ctx.fillStyle = doraemon.color;
+            ctx.fillRect(doraemon.x, doraemon.y, doraemon.width, doraemon.height);
+            ctx.shadowBlur = 0;
+
+            // Doraemon details
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(doraemon.x + 18, doraemon.y + 20, 10, 0, Math.PI * 2);
+            ctx.arc(doraemon.x + 42, doraemon.y + 20, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(doraemon.x + 22, doraemon.y + 23, 4, 0, Math.PI * 2);
+            ctx.arc(doraemon.x + 46, doraemon.y + 23, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FFD700';
+            ctx.beginPath();
+            ctx.arc(doraemon.x + 30, doraemon.y + 35, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mouse
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(mouse.x, mouse.y, mouse.width, mouse.height);
+            ctx.fillStyle = '#FFEBCD';
+            ctx.beginPath();
+            ctx.arc(mouse.x + 12, mouse.y + 12, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FF0000';
+            ctx.beginPath();
+            ctx.arc(mouse.x + 15, mouse.y + 14, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Dorayaki
+            dorayaki.forEach(cake => {
+                ctx.save();
+                ctx.translate(cake.x + cake.width/2, cake.y + cake.height/2 + Math.sin(cake.bob) * 3);
+                ctx.shadowColor = '#FFD700';
+                ctx.shadowBlur = 15;
+                ctx.fillStyle = '#FFD700';
+                ctx.fillRect(-17.5, -17.5, 35, 35);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#FF8C00';
+                ctx.fillRect(-13, -13, 26, 10);
+                ctx.fillRect(-13, 1, 26, 10);
+                ctx.restore();
+                ctx.font = 'bold 22px Arial';
+                ctx.fillText('🥮', cake.x + 2, cake.y + 30);
+            });
+
+            // HUD
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.fillRect(10, 10, 250, 90);
+            ctx.fillStyle = '#FF1493';
+            ctx.font = 'bold 26px Arial';
+            ctx.fillText(`Distance: ${Math.floor(distance)}m`, 20, 35);
+            ctx.fillText(`Dorayaki: ${cakesCollected}`, 20, 65);
+            ctx.font = 'bold 18px Arial';
+            ctx.fillStyle = '#32CD32';
+            ctx.fillText('✅ SAFE ZONES!', 20, 88);
+
+            ctx.fillStyle = '#FF69B4';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText(`Speed: ${speed.toFixed(1)}`, 300, 35);
+            
+            // Next obstacle indicator
+            ctx.fillStyle = 'rgba(255,255,0,0.3)';
+            ctx.fillRect(canvas.width - 100, 10, nextObstacleDistance / 5, 20);
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            finalDistanceSpan.textContent = Math.floor(distance);
+            finalCakesSpan.textContent = cakesCollected;
+            gameOverDiv.style.display = 'block';
+        }
+
+        function restart() {
+            gameRunning = true;
+            distance = 0;
+            cakesCollected = 0;
+            speed = 4;
+            collisionFlash = 0;
+            doraemon.y = 250;
+            doraemon.vy = 0;
+            doraemon.grounded = true;
+            mouse.x = 800;
+            dorayaki = [];
+            obstacles = [];
+            nextObstacleDistance = 300;
+            gameOverDiv.style.display = 'none';
+            init();
+        }
+
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning && e.code === 'Space') {
+                e.preventDefault();
+                restart();
+            }
+        });
+        gameOverDiv.addEventListener('click', restart);
+
+        init();
+        gameLoop();
+    </script>
+</body>
+</html>
