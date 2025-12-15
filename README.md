@@ -13,7 +13,7 @@ An endless runner game inspired by Doraemon, built using **HTML5 Canvas** and **
 - **Tap** – Jump (Mobile)
 
 ## 🚀 Live Demo
-👉 https://your-username.github.io/Doraemon-Runner-Game/
+👉https://hellanmithula.github.io/Doraemon_endless_runner/
 
 ## 🛠 Tech Stack
 - HTML5
